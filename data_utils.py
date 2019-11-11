@@ -6,8 +6,10 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+import math
+import itertools
 
-from itertools import combinations
+
 
 def load_dataset(pkl_file_name):
     # Load a saved dataset into memory
@@ -58,18 +60,88 @@ def show_skeleton_movie(gymn_dataset,clip_ID):
     ani = animation.ArtistAnimation(fig,ims,interval=500,blit=True,repeat_delay=1000)            
     plt.show()
     return(ani)
-
-def get_RP(skeleton_coords):
-    jp = get_joint_pairs()
-    jn = np.arange(len(jp))
-    comb = combinations(jn,2)
     
+def get_list_720(keypoint_list,joint_list):
+    prod_list = list(itertools.product(keypoint_list,joint_list))
+    curated_list = []
+    for key_point,joint in prod_list:
+        sw = key_point == joint[0] or key_point == joint[1]
+        if not sw :
+            curated_list.append([key_point,joint])
+    return(curated_list) 
+    
+def length_square(p1,p2):
+    # returns square of distance b/w two points 
+    x1,y1 = p1
+    x2,y2 = p2
+    dy = y2-y1  
+    dx = x2-x1  
+    return dx*dx + dy*dy
+
+def get_angles(p1,p2,p3):
+    # Square of lengths be a2, b2, c2 
+    a2 = length_square(p2,p3)
+    b2 = length_square(p1,p3)
+    c2 = length_square(p1,p2)
+    # length of sides be a, b, c 
+    a = math.sqrt(a2)
+    b = math.sqrt(b2)    
+    c = math.sqrt(c2)
+    # From Cosine law 
+    alpha = math.acos((b2 + c2 - a2)/(2*b*c))
+    betta = math.acos((a2 + c2 - b2)/(2*a*c))
+    gamma = math.acos((a2 + b2 - c2)/(2*a*b))
+    return alpha*180/math.pi, betta*180/math.pi, gamma*180/math.pi
+    
+    
+def calc_features_720(keypoint,joint_a,joint_b):
+    # Calculates the distance("Magnitude") between two points
+    # and relative position descriptors
+    x1,y1 = joint_a
+    x2,y2 = joint_b
+    x3,y3 = keypoint
+    dy = y2-y1  
+    dx = x2-x1  
+    distance_to_joint = 0
+    if abs(dx)>0:
+        m = dy/dx
+        # generates an line equation of the form ax + by + c = 0 (p1,p2)
+        a = m             
+        b = -1
+        c =  y1 - (m*x1)  
+        nm = abs((a*x3)+(b*y3)+c)
+        dm = math.sqrt(a**2+b**2)
+        if dm>0:
+            distance_to_joint = abs(nm/dm)
+    if distance_to_joint>5:
+        t,b,g = get_angles(keypoint,joint_a,joint_b)
+        feat_list = [distance_to_joint, t, b]
+    else:
+        feat_list = [0, 0, 0]
+    return feat_list
+    
+def calc_features_136(p1,p2):
+    # Calculates the distance("Magnitude") between two points
+    # and relative position descriptors
+    x1,y1 = p1
+    x2,y2 = p2
+    dy = y2-y1  # Relative Position Descriptor (x)
+    dx = x2-x1  # Relative Poisition Descriptor (y)
+    magnitude = math.sqrt(dx*dx + dy*dy)
+    feat_list = [dx, dy, magnitude]
+    return feat_list    
+   
             
 class GymnDataSet:
     
     def __init__(self,pickle_file_name,load_now=True):
         self.pkl_file_name = pickle_file_name
         self.threshold = 0.2
+        self.keypoints = 17   # 17 Keypoints COCO
+        self.joints = [[0, 1], [1, 3], [0, 2], [2, 4],
+                       [5, 6], [5, 7], [7, 9], [6, 8], [8, 10],
+                       [5, 11], [6, 12], [11, 12],
+                       [11, 13], [12, 14], [13, 15], [14, 16]] 
         if load_now:
             self.loadData()
     
@@ -113,6 +185,66 @@ class GymnDataSet:
         else:
             print('Clip not found or invalid!')
             return(None)
+            
+    def GetSkeletonFeatures(self,clip_id,sk_id):
+        joints = self.joints
+        sk_list = self.getSkeletons(clip_id)
+        list_136 = list(itertools.combinations(list(range(self.keypoints)),2))
+        list_240 = get_list_720(list(range(self.keypoints)),joints)
+        feat_136 = []
+        feat_240 = []
+        if not sk_list is None:
+            if sk_id > len(sk_list)-1:
+                print('Error, beyond skeleton range ')
+            else:
+                skeleton = sk_list[sk_id]
+                for kp_a,kp_b in list_136:
+                    p1 = skeleton[kp_a]
+                    p2 = skeleton[kp_b]
+                    sk_feat = calc_features_136(p1,p2)
+                    feat_136.append(sk_feat)
+                for keypoint,joint in list_240:
+                    kp = skeleton[keypoint]
+                    joint_a = skeleton[joint[0]]
+                    joint_b = skeleton[joint[1]]
+                    #print(keypoint," KP=",kp," ",joint,"  A=",joint_a,"  B=",joint_b)
+                    sk_feat = calc_features_720(kp,joint_a,joint_b)
+                    feat_240.append(sk_feat)
+        return feat_136,feat_240
+
+def get_product(keypoint_list,joint_list):
+    prod_list = list(itertools.product(keypoint_list,joint_list))
+    curated_list = []
+    for key_point,joint in prod_list:
+        sw = key_point == joint[0] or key_point == joint[1]
+        if not sw :
+            curated_list.append([key_point,joint])
+    return(curated_list)
+    
+
+
+def tx():
+    jp = get_joint_pairs()
+    jn = np.arange(len(jp))
+    comb = combinations(jn,2)
+    c=0
+    for i in list(comb): 
+        c+=1
+        z=i
+    return(c)
+    
+def EQ(x1,y1,x2,y2):
+    m = (y2-y1) / (x2-x1)
+    a = m
+    b = -1
+    c = y1 - (m*x1)
+    return a, b, c
+
+def EQD(a,b,c,x1,y1):
+    nm = abs((a*x1)+(b*y1)+c)
+    dm = math.sqrt(a**2+b**2)
+    return nm/dm
+    
     
 
         
