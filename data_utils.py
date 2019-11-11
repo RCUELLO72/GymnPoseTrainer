@@ -39,8 +39,6 @@ def draw_skeleton(W,H,coords):
         cv2.line(img, pt1, pt2, cm_color, 3)
     return(img)
     
-    
-    
 def get_skeleton_frame(gymn_dataset,clip_ID,frame_number):
     coords = gymn_dataset["Skeletons"][clip_ID][frame_number]
     img = draw_skeleton(800,600,coords)
@@ -68,7 +66,13 @@ def get_list_720(keypoint_list,joint_list):
         sw = key_point == joint[0] or key_point == joint[1]
         if not sw :
             curated_list.append([key_point,joint])
-    return(curated_list) 
+    return(curated_list)
+
+def scale_linear_bycolumn(rawpoints, high=255.0, low=0.0):
+    mins = np.min(rawpoints, axis=0)
+    maxs = np.max(rawpoints, axis=0)
+    rng = maxs - mins
+    return high - (((high - low) * (maxs - rawpoints)) / rng)    
     
 def length_square(p1,p2):
     # returns square of distance b/w two points 
@@ -92,7 +96,6 @@ def get_angles(p1,p2,p3):
     betta = math.acos((a2 + c2 - b2)/(2*a*c))
     gamma = math.acos((a2 + b2 - c2)/(2*a*b))
     return alpha*180/math.pi, betta*180/math.pi, gamma*180/math.pi
-    
     
 def calc_features_720(keypoint,joint_a,joint_b):
     # Calculates the distance("Magnitude") between two points
@@ -133,11 +136,16 @@ def calc_features_136(p1,p2):
    
             
 class GymnDataSet:
-    
+    '''
+    Class designed to read skeleton dataset from a picklefile
+    and transform it to RGB images
+    '''
     def __init__(self,pickle_file_name,load_now=True):
         self.pkl_file_name = pickle_file_name
         self.threshold = 0.2
         self.keypoints = 17   # 17 Keypoints COCO
+        self.scene_size = 15  # 15 frames per scene (4.5s)
+        self.scene_skip_frames = 3  # 3 frames = 1s
         self.joints = [[0, 1], [1, 3], [0, 2], [2, 4],
                        [5, 6], [5, 7], [7, 9], [6, 8], [8, 10],
                        [5, 11], [6, 12], [11, 12],
@@ -211,40 +219,30 @@ class GymnDataSet:
                     sk_feat = calc_features_720(kp,joint_a,joint_b)
                     feat_240.append(sk_feat)
         return feat_136,feat_240
-
-def get_product(keypoint_list,joint_list):
-    prod_list = list(itertools.product(keypoint_list,joint_list))
-    curated_list = []
-    for key_point,joint in prod_list:
-        sw = key_point == joint[0] or key_point == joint[1]
-        if not sw :
-            curated_list.append([key_point,joint])
-    return(curated_list)
     
-
-
-def tx():
-    jp = get_joint_pairs()
-    jn = np.arange(len(jp))
-    comb = combinations(jn,2)
-    c=0
-    for i in list(comb): 
-        c+=1
-        z=i
-    return(c)
+    def GetFramePic(self,clip_id,sk_id):
+        p1,p2 = self.GetSkeletonFeatures(clip_id,sk_id)
+        p1n = scale_linear_bycolumn(p1)
+        p2n = scale_linear_bycolumn(p2)
+        img = np.concatenate((p1n.flatten(),p2n.flatten()))
+        return img.reshape(47,8,3).astype(int)
     
-def EQ(x1,y1,x2,y2):
-    m = (y2-y1) / (x2-x1)
-    a = m
-    b = -1
-    c = y1 - (m*x1)
-    return a, b, c
-
-def EQD(a,b,c,x1,y1):
-    nm = abs((a*x1)+(b*y1)+c)
-    dm = math.sqrt(a**2+b**2)
-    return nm/dm
-    
-    
-
+    def GetScene(self,clip_id,sc_number=0):
+        sk_list = self.getSkeletons(clip_id)
+        first_frame = sc_number * self.scene_skip_frames
+        if (first_frame+self.scene_size>len(sk_list)):
+            print('Not enough frames')
+            return None
+        else:
+            for i in range(self.scene_size):
+                a_frame = self.GetFramePic(clip_id,first_frame+i)
+                if i==0:
+                    final_img = a_frame
+                else:
+                    final_img = np.append(final_img,a_frame,axis=1)
+        return final_img
+                
+                
         
+        
+            
