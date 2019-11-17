@@ -73,14 +73,20 @@ def get_video_frames(source_path,video_file,freq):
     n_fps = int(video_cap.get(cv.CAP_PROP_FPS)) 
     checkpoint = math.floor(n_fps / freq)
     cnt =1
+    sw = True
     if video_cap.isOpened():
         ret, frame = video_cap.read()
-        # Use first frame to get black box 
-        x,y,w,h = get_crop_dims(frame) 
-        print('Cropped Size:',w-x+1,h-y+1)
+        
+
         while (video_cap.isOpened()):
             ret, frame = video_cap.read()
+                
             if ret == True:
+                if sw:
+                    # Use first frame to get black box 
+                    x,y,w,h = get_crop_dims(frame) 
+                    print('Cropped Size:',w-x+1,h-y+1)
+                    sw = False
                 if cnt==checkpoint:
                     cropped_frame = frame[y:y+h,x:x+w]
                     # Converting now the the fram to RGB
@@ -157,7 +163,7 @@ def get_skeletons(frame_list):
     return frame_box_ok, extra_person, skeleton_coords
 
 
-def scrap_videos(source_path,save_file_name="GymnData.pickle",freq=3):
+def scrap_videos(source_path,save_file_name="GymnData.pickle",freq=30):
     print('Reading directory...')
     clip_list = process_directory_videos(source_path)
     print('Finished')

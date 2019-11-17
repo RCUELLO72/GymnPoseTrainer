@@ -8,8 +8,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import math
 import itertools
-
-
+import pandas as pd
 
 def load_dataset(pkl_file_name):
     # Load a saved dataset into memory
@@ -37,7 +36,7 @@ def draw_skeleton(W,H,coords):
         pt1 = (int(pts[jp, 0][0]), int(pts[jp, 1][0]))
         pt2 = (int(pts[jp, 0][1]), int(pts[jp, 1][1]))
         cv2.line(img, pt1, pt2, cm_color, 3)
-    return(img)
+    return(img) 
     
 def get_skeleton_frame(gymn_dataset,clip_ID,frame_number):
     coords = gymn_dataset["Skeletons"][clip_ID][frame_number]
@@ -59,7 +58,7 @@ def show_skeleton_movie(gymn_dataset,clip_ID):
     plt.show()
     return(ani)
     
-def get_list_720(keypoint_list,joint_list):
+def get_joint_point_list(keypoint_list,joint_list):
     prod_list = list(itertools.product(keypoint_list,joint_list))
     curated_list = []
     for key_point,joint in prod_list:
@@ -73,6 +72,10 @@ def scale_linear_bycolumn(rawpoints, high=255.0, low=0.0):
     maxs = np.max(rawpoints, axis=0)
     rng = maxs - mins
     return high - (((high - low) * (maxs - rawpoints)) / rng)    
+
+def convert_to_colorrange(rawpoints):
+    d = scale_linear_bycolumn(rawpoints)
+    return d.flatten().astype(np.uint8)
     
 def length_square(p1,p2):
     # returns square of distance b/w two points 
@@ -97,7 +100,7 @@ def get_angles(p1,p2,p3):
     gamma = math.acos((a2 + b2 - c2)/(2*a*b))
     return alpha*180/math.pi, betta*180/math.pi, gamma*180/math.pi
     
-def calc_features_720(keypoint,joint_a,joint_b):
+def calc_jointpoint_features(keypoint,joint_a,joint_b):
     # Calculates the distance("Magnitude") between two points
     # and relative position descriptors
     x1,y1 = joint_a
@@ -123,16 +126,28 @@ def calc_features_720(keypoint,joint_a,joint_b):
         feat_list = [0, 0, 0]
     return feat_list
     
-def calc_features_136(p1,p2):
+def calc_descriptor_feats(p1,p2):
     # Calculates the distance("Magnitude") between two points
     # and relative position descriptors
     x1,y1 = p1
     x2,y2 = p2
     dy = y2-y1  # Relative Position Descriptor (x)
     dx = x2-x1  # Relative Poisition Descriptor (y)
-    magnitude = math.sqrt(dx*dx + dy*dy)
-    feat_list = [dx, dy, magnitude]
-    return feat_list    
+    magnitude = math.sqrt(dx*dx + dy*dy) 
+    feat_list = [abs(dx), abs(dy), magnitude]
+    return feat_list   
+
+def normalize_blk(blk) :
+    maxv = np.max(blk)
+    if not maxv == 0:
+        blk = scale_linear_bycolumn(blk)
+    return blk
+
+def normalize_data(blk_a,blk_b):
+    blk_a = normalize_blk(blk_a)
+    blk_b = normalize_blk(blk_b)
+    blk = np.append(blk_a,blk_b,axis=1)
+    return blk.flatten().astype(np.uint8)
    
             
 class GymnDataSet:
@@ -144,8 +159,8 @@ class GymnDataSet:
         self.pkl_file_name = pickle_file_name
         self.threshold = 0.2
         self.keypoints = 17   # 17 Keypoints COCO
-        self.scene_size = 15  # 15 frames per scene (4.5s)
-        self.scene_skip_frames = 3  # 3 frames = 1s
+        self.scene_size = 20 # 15 frames per scene (
+        self.scene_skip_frames = 10  # 3 frames = 1s
         self.joints = [[0, 1], [1, 3], [0, 2], [2, 4],
                        [5, 6], [5, 7], [7, 9], [6, 8], [8, 10],
                        [5, 11], [6, 12], [11, 12],
@@ -159,25 +174,45 @@ class GymnDataSet:
             clip_list = data["ClipList"]
             val_idx = clip_list['CroppedPerson'] /clip_list['NumberOfFrames'] < self.threshold
             self.ClipList = clip_list[val_idx]
-            skeletons = {}
-            for idx, clip in self.ClipList.iterrows():
-                clip_id = clip['PoseClipId']
-                sk_list = data['Skeletons'][clip_id]
-                cp = data['CroppedPerson'][clip_id]
-                ep = data['ExtraPerson'][clip_id]
-                frames_with_issues = np.logical_or(cp,ep) 
-                vf = []
-                frm_idx = 0                
-                frames_with_issues = np.logical_or(cp,ep)
-                for frame in frames_with_issues:
-                    if not frame:
-                        vf.append(sk_list[frm_idx])
-                    frm_idx += 1  
-                skeletons[clip_id] = vf
-            self.Skeletons = skeletons
+            self.pruneSkeletons(data)
+            self.calcClassList()
+            self.setListsForFeatureExtraction()
+            self.setClass()
             print('Data loaded and CLEANED!!.')
+    
+    def pruneSkeletons(self,data):
+        skeletons = {}
+        for idx, clip in self.ClipList.iterrows():
+            clip_id = clip['PoseClipId']
+            sk_list = data['Skeletons'][clip_id]
+            cp = data['CroppedPerson'][clip_id]
+            ep = data['ExtraPerson'][clip_id]
+            frames_with_issues = np.logical_or(cp,ep) 
+            vf = []
+            frm_idx = 0                
+            frames_with_issues = np.logical_or(cp,ep)
+            for bad_frame in frames_with_issues:
+                if not bad_frame:
+                    vf.append(sk_list[frm_idx])
+                frm_idx += 1  
+            skeletons[clip_id] = vf
+        self.Skeletons = skeletons
+        
             
-    def SetThreshold(self,new_threshold):
+    def calcClassList(self):
+        # Obtain summary of clips (counts)
+        cl = self.ClipList[['ExerciseType','SampleType','PoseClipId']].groupby(['ExerciseType','SampleType']).count()
+        self.Summary = cl.rename(columns={"PoseClipId":"Count"})
+        # Establish Class List for classification (NN-LSTM)
+        cl = self.Summary.reset_index()
+        self.ClassList = cl.drop(columns=['Count'])
+        
+    def setListsForFeatureExtraction(self):
+        self.RelativeDescriptorList = list(itertools.combinations(list(range(self.keypoints)),2))
+        self.JointPointList = get_joint_point_list(list(range(self.keypoints)),self.joints)
+        
+            
+    def setThreshold(self,new_threshold):
         self.threshold = new_threshold
     
     
@@ -194,53 +229,92 @@ class GymnDataSet:
             print('Clip not found or invalid!')
             return(None)
             
-    def GetSkeletonFeatures(self,clip_id,sk_id):
-        joints = self.joints
+    def getDescriptorData(self,sk_list,sk_id,last_data=None):
+        skeleton = sk_list[sk_id]
+        data = []
+        for kp_a,kp_b in self.RelativeDescriptorList:
+            p1 = skeleton[kp_a]
+            p2 = skeleton[kp_b]
+            sk_feat = calc_descriptor_feats(p1,p2)
+            data.append(sk_feat)
+        data = np.array(data)
+        if last_data is None:
+            diff = np.zeros((len(self.RelativeDescriptorList),3))
+        else:
+            diff = data - last_data
+        return data, np.abs(diff)
+    
+    def getJointPointData(self,sk_list,sk_id,last_data=None):
+        data = []
+        skeleton = sk_list[sk_id]
+        for keypoint,joint in self.JointPointList:
+            kp = skeleton[keypoint]
+            joint_a = skeleton[joint[0]]
+            joint_b = skeleton[joint[1]]
+            sk_feat = calc_jointpoint_features(kp,joint_a,joint_b)
+            data.append(sk_feat)  
+        data = np.array(data)
+        if last_data is None:
+            diff = np.zeros((len(self.JointPointList),3))
+        else:
+            diff = data - last_data
+        return data, np.abs(diff)
+    
+    def getSkeletonFeatures(self,clip_id,sk_id,last_desc_data=None,last_jointpoint_data=None):
         sk_list = self.getSkeletons(clip_id)
-        list_136 = list(itertools.combinations(list(range(self.keypoints)),2))
-        list_240 = get_list_720(list(range(self.keypoints)),joints)
-        feat_136 = []
-        feat_240 = []
         if not sk_list is None:
             if sk_id > len(sk_list)-1:
                 print('Error, beyond skeleton range ')
             else:
-                skeleton = sk_list[sk_id]
-                for kp_a,kp_b in list_136:
-                    p1 = skeleton[kp_a]
-                    p2 = skeleton[kp_b]
-                    sk_feat = calc_features_136(p1,p2)
-                    feat_136.append(sk_feat)
-                for keypoint,joint in list_240:
-                    kp = skeleton[keypoint]
-                    joint_a = skeleton[joint[0]]
-                    joint_b = skeleton[joint[1]]
-                    #print(keypoint," KP=",kp," ",joint,"  A=",joint_a,"  B=",joint_b)
-                    sk_feat = calc_features_720(kp,joint_a,joint_b)
-                    feat_240.append(sk_feat)
-        return feat_136,feat_240
-    
-    def GetFramePic(self,clip_id,sk_id):
-        p1,p2 = self.GetSkeletonFeatures(clip_id,sk_id)
-        p1n = scale_linear_bycolumn(p1)
-        p2n = scale_linear_bycolumn(p2)
-        img = np.concatenate((p1n.flatten(),p2n.flatten()))
-        return img.reshape(47,8,3).astype(int)
+                descriptor_data, temporal_data_descriptor = self.getDescriptorData(sk_list,sk_id,last_desc_data)
+                jointpoint_data, temporal_data_jointpoint = self.getJointPointData(sk_list,sk_id,last_jointpoint_data)
+        return descriptor_data, temporal_data_descriptor,jointpoint_data, temporal_data_jointpoint
+                
+    def getFramePic(self,clip_id,sk_id,last_desc_data=None,last_jointpoint_data=None):
+        d1,t1,d2,t2 = self.getSkeletonFeatures(clip_id,sk_id,last_desc_data,last_jointpoint_data)
+        pt1 = normalize_data(d1,t1)
+        pt2 = normalize_data(d2,t2)
+        img = np.append(pt1,pt2)
+        return img.reshape(94,8,3),d1,d2
     
     def GetScene(self,clip_id,sc_number=0):
         sk_list = self.getSkeletons(clip_id)
         first_frame = sc_number * self.scene_skip_frames
+        descriptor_data = None
+        jointpoint_data = None
         if (first_frame+self.scene_size>len(sk_list)):
             print('Not enough frames')
             return None
         else:
             for i in range(self.scene_size):
-                a_frame = self.GetFramePic(clip_id,first_frame+i)
+                a_frame,descriptor_data,jointpoint_data = self.getFramePic(clip_id,first_frame+i,descriptor_data,jointpoint_data)
                 if i==0:
                     final_img = a_frame
                 else:
                     final_img = np.append(final_img,a_frame,axis=1)
         return final_img
+    
+    def setClass(self):
+        cl = self.ClassList.reset_index().rename(columns={'index':'ClassId'})
+        ndf = pd.merge(self.ClipList,cl,on=['ExerciseType','SampleType'])
+        self.ClipList = ndf
+        
+    def createDataSet(self, nr_scenes=3):
+        labels = []
+        data = []
+        for index, clip in self.ClipList.iterrows():
+            clip_id = clip['PoseClipId']
+            for i in range(nr_scenes):
+                print(clip_id,' ',i)
+                data_point = self.GetScene(clip_id,i)
+                class_id = clip['ClassId']
+                if not data_point is None:
+                    labels.append(class_id)
+                    data.append(data_point)
+        return labels, data
+                    
+                
+        
                 
                 
         
