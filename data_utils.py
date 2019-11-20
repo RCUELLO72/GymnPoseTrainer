@@ -67,11 +67,13 @@ def get_joint_point_list(keypoint_list,joint_list):
             curated_list.append([key_point,joint])
     return(curated_list)
 
-def scale_linear_bycolumn(rawpoints, high=255.0, low=0.0):
+def scale_linear_bycolumn(rawpoints, high=255.0, low=55.0):
     mins = np.min(rawpoints, axis=0)
     maxs = np.max(rawpoints, axis=0)
     rng = maxs - mins
-    return high - (((high - low) * (maxs - rawpoints)) / rng)    
+    rv = high - (((high - low) * (maxs - rawpoints)) / rng)   
+    rv[rv<low] = low
+    return rv   
 
 def convert_to_colorrange(rawpoints):
     d = scale_linear_bycolumn(rawpoints)
@@ -299,7 +301,7 @@ class GymnDataSet:
         ndf = pd.merge(self.ClipList,cl,on=['ExerciseType','SampleType'])
         self.ClipList = ndf
         
-    def createDataSet(self, nr_scenes=3):
+    def createDataSet(self, save_file_name="MainDataSet.pickle",nr_scenes=3):
         labels = []
         data = []
         for index, clip in self.ClipList.iterrows():
@@ -311,8 +313,13 @@ class GymnDataSet:
                 if not data_point is None:
                     labels.append(class_id)
                     data.append(data_point)
-        return labels, data
-                    
+        out = {}
+        out['data'] = data
+        out['labels'] = labels
+        out['ClassList'] = self.ClassList
+        with open(save_file_name,'wb') as f:
+            pickle.dump(out,f)
+        return(out)
                 
         
                 
