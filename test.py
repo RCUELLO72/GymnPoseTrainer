@@ -5,16 +5,10 @@ Created on Mon Nov 11 15:16:47 2019
 
 @author: rcuello
 """
-from itertools import chain
+c = 8
+class testC():
+    def printea(self):
+        print(c)
 
-def gl():
-    r1 = range(6,16)
-    r2 = range(70,91)
-    r3 = range(121,128)
-    return chain(r1,r2,r3)
-
-for i in gl():
-    print(i)
-    
-for i in gl():
-    print(i)    
+a = testC()
+a.printea()

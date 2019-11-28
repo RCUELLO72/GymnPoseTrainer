@@ -163,7 +163,7 @@ def get_skeletons(frame_list):
     return frame_box_ok, extra_person, skeleton_coords
 
 
-def scrap_videos(source_path,save_file_name="GymnData.pickle",freq=30):
+def scrap_videos(source_path,save_file_name="Skeletons.pickle",freq=30):
     print('Reading directory...')
     clip_list = process_directory_videos(source_path)
     print('Finished')
