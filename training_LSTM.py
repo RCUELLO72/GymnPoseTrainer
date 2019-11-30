@@ -84,8 +84,8 @@ def getDataLoaders(data,batch_size,transforms,test_ratio=0.15):
     X_train, X_test = getBalancedList(data,test_ratio)
     train_repo = DataRepo(X_train,data)
     test_repo = DataRepo(X_test,data)
-    trainData = GymnDataset(train_repo,2040,2,transforms)
-    testData = GymnDataset(test_repo,2040,2,transforms)
+    trainData = GymnDataset(train_repo,510,4,transforms)
+    testData = GymnDataset(test_repo,510,4,transforms)
     trainLoader = DataLoader(trainData,batch_size=batch_size)
     testLoader = DataLoader(testData,batch_size=batch_size)
     return trainLoader, testLoader    
@@ -142,7 +142,7 @@ def train(model, device, train_dataloader, optimizer, epoch, verbose=False):
         output = model(input_var)
         #loss = model.loss(output, target_var)
         loss = criterion(output,target_var)
-        print(output)
+        #print(output)
         loss.backward()
         optimizer.step()
         total_loss += loss
@@ -208,11 +208,11 @@ batch_size = 8
 use_cuda = False # use True to switch to GPU
 mydata = load_dataset()
 
-input_dim = 2
-hidden_dim = 8
-layer_dim = 3
+input_dim = 4
+hidden_dim = 1020
+layer_dim = 1
 output_dim = 11
-seq_dim = 2040
+seq_dim = 510
 
 device = torch.device("cuda" if use_cuda else "cpu")
 model = LSTMModel(input_dim, hidden_dim, layer_dim, output_dim).to(device)

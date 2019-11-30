@@ -210,7 +210,10 @@ class GymnDataSet:
             frames_with_issues = np.logical_or(cp,ep)
             for bad_frame in frames_with_issues:
                 if not bad_frame:
-                    vf.append(sk_list[frm_idx])
+                    if frm_idx>=len(sk_list):
+                        break
+                    else:
+                        vf.append(sk_list[frm_idx])
                 frm_idx += 1  
             skeletons[clip_id] = vf
         self.Skeletons = skeletons
@@ -275,7 +278,7 @@ class GymnDataSet:
         else:
             npdata = np.zeros((len(self.TSSI),2))
         
-        return np.append(ndata,npdata).reshape((len(self.TSSI)*4,1))
+        return np.append(ndata,npdata).reshape((len(self.TSSI)*4,1)), ndata
     
     def getJointPointData(self,sk_list,sk_id):
         data = []
@@ -306,9 +309,9 @@ class GymnDataSet:
                 print('Error, beyond skeleton range ')
             else:
                 descriptor_data = self.getDescriptorData(sk_list,sk_id)
-                tssi_data = self.getTSSIData(sk_list,sk_id)
+                tssi_data, lstm_tssi = self.getTSSIData(sk_list,sk_id)
                 jointpoint_data = self.getJointPointData(sk_list,sk_id)
-        return descriptor_data,tssi_data,jointpoint_data
+        return descriptor_data,tssi_data,jointpoint_data, lstm_tssi
     
     def buildFrameImage(self,rp,tssi,jpd):
         tA = np.zeros((60,8))
@@ -330,10 +333,15 @@ class GymnDataSet:
         """
         Create a RGB image to feed a CNN
         """
-        rp, tssi, jpd = self.getSkeletonFeatures(clip_id,sk_id)
+        rp, tssi, jpd, lstm_tssi = self.getSkeletonFeatures(clip_id,sk_id)
         CNN = self.buildFrameImage(rp,tssi,jpd)
         # sending TSSI and Magnitude data to LSTM network
-        LSTM = np.hstack((tssi,rp[:,[2]]))
+        #mag = rp[:,[2]]
+        mag1 = rp[0:34,[2]]
+        mag2 = rp[34:68,[2]]
+        #mag = mag.reshape(68,2)
+        #print('*',lstm_tssi.shape,'-',mag1.shape)
+        LSTM = np.hstack((lstm_tssi,mag1,mag2))
         #scaler = MinMaxScaler()
         #scaler.fit(LSTM)
         #LSTM = scaler.transform(LSTM)
@@ -364,7 +372,7 @@ class GymnDataSet:
         ndf = pd.merge(self.ClipList,cl,on=['ExerciseType','SampleType'])
         self.ClipList = ndf
         
-    def createDataSet(self, save_file_name="MainDataSet.pickle",nr_scenes=3):
+    def createDataSet(self, save_file_name="MainDataSet.pickle",nr_scenes=4):
         labels = []
         data_cnn = []
         data_lstm = []

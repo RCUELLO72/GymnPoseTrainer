@@ -173,7 +173,7 @@ def printClassificationReport(cData):
 
 losses = []
 accuracies = []
-n_epochs = 100
+n_epochs = 50
 learning_rate = 0.1
 lr_decay = 5 # every 10 epochs, the learning rate is divided by 10
 batch_size = 4

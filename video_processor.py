@@ -11,7 +11,7 @@ from gluoncv.data.transforms.pose import detector_to_simple_pose, heatmap_to_coo
 from gluoncv.data.transforms.presets.ssd import transform_test
 
 # Initial steps
-path_to_videos = "/home/rcuello/SecondDisk/GymnVideoData"
+path_to_videos = "VideoData"
 # Loading pre-trained models
 detector = model_zoo.get_model('yolo3_mobilenet1.0_coco', pretrained=True)
 pose_net = model_zoo.get_model('simple_pose_resnet18_v1b', pretrained=True)
@@ -74,10 +74,10 @@ def get_video_frames(source_path,video_file,freq):
     checkpoint = math.floor(n_fps / freq)
     cnt =1
     sw = True
+    frm_count = 0
     if video_cap.isOpened():
         ret, frame = video_cap.read()
         
-
         while (video_cap.isOpened()):
             ret, frame = video_cap.read()
                 
@@ -92,11 +92,16 @@ def get_video_frames(source_path,video_file,freq):
                     # Converting now the the fram to RGB
                     rgb_frame = cv.cvtColor(cropped_frame, cv.COLOR_BGR2RGB)
                     frame_list.append(mx.nd.array(rgb_frame).astype('uint8'))
+                    frm_count = frm_count +1
                     cnt=1
                 else:
                     cnt+=1
+
             else:
                 break
+            if frm_count>100:
+                print('Too much')
+                break            
     else:
         print('Error opening the file')
     video_cap.release()
@@ -144,13 +149,16 @@ def get_skeletons(frame_list):
     extra_person = np.zeros(nr_frames, dtype='uint8')
     print('# frames :',nr_frames)
     fs =0
+    err = 0
     for a_frame in frame_list:
         ok_flag, extra_flag, frame_skeleton = get_skeleton_from_frame(a_frame)
         msg='  '
         if not ok_flag:
             msg = msg + ':CROPPPED PERSON'
+            err = err + 1
         if extra_flag:
             msg = msg + ':MULTIPLE PERSONS'
+            err = err + 1
         print(fs+1,msg,end=' ')
         if not ok_flag:
             frame_box_ok[fs] = 1
@@ -158,6 +166,8 @@ def get_skeletons(frame_list):
             extra_person[fs] = 1
         fs = fs + 1        
         skeleton_coords.append(frame_skeleton)
+        if err>30:
+            break
     print('*')        
     print('Finished file.')
     return frame_box_ok, extra_person, skeleton_coords
